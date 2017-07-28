@@ -65,9 +65,6 @@ func _traverse(srv *drive.Service, directoryId string, gen func(*drive.Service, 
 
 
 func setReadOnly(srv *drive.Service, depth int) (func(*drive.File), bool) {
-	if depth > 1 {
-		return nil, true
-	}
 	return func(f *drive.File) {
 		fmt.Printf("%s (%s)\n", f.Name, f.Id)
 		//FIXME set the owner to onlab admin account
