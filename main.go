@@ -6,9 +6,26 @@ import (
 	"google.golang.org/api/drive/v3"
 	"github.com/bocon13/gdrivefix/app"
 	"strings"
+	"os"
+	"strconv"
 )
 
-func traverse(srv *drive.Service, directoryId string, gen func(*drive.Service, int) (func(*drive.File), bool), depth int) {
+func traverse(srv *drive.Service, directoryId string, gen func(*drive.Service, int) (func(*drive.File), bool)) {
+	fn, bool := gen(srv, 0)
+	if !bool {
+		f, err := srv.Files.Get(directoryId).
+			Fields("id, name, mimeType, capabilities, permissions, parents").
+			Do()
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			fn(f)
+		}
+	}
+	_traverse(srv, directoryId, gen, 1)
+}
+
+func _traverse(srv *drive.Service, directoryId string, gen func(*drive.Service, int) (func(*drive.File), bool), depth int) {
 	nextPageToken := ""
 	fn, stop := gen(srv, depth)
 	if stop {
@@ -29,7 +46,7 @@ func traverse(srv *drive.Service, directoryId string, gen func(*drive.Service, i
 		for _, i := range r.Files {
 			fn(i)
 			if i.MimeType == "application/vnd.google-apps.folder" {
-				traverse(srv, i.Id, gen, depth+1)
+				_traverse(srv, i.Id, gen, depth+1)
 			}
 		}
 
@@ -40,20 +57,7 @@ func traverse(srv *drive.Service, directoryId string, gen func(*drive.Service, i
 	}
 }
 
-func print(depth int) (func(*drive.File), bool) {
-	if depth > 2 {
-		return nil, true
-	}
-	prefix := strings.Repeat("-", depth)
-	return func(f *drive.File) {
-		fmt.Println(prefix, f.Name, f.Id)
-		//fmt.Println(i.Name, i.Id, i.MimeType)
-		//fmt.Printf("%+v\n", i.Capabilities)
-		//fmt.Printf("%+v\n", i.Permissions)
-		//fmt.Printf("%+v\n", i.Parents)
-		//fmt.Println("-----------------------")
-	}, false
-}
+
 
 func setReadOnly(srv *drive.Service, depth int) (func(*drive.File), bool) {
 	if depth > 1 {
@@ -108,20 +112,28 @@ func main() {
 		log.Fatalf("Unable to retrieve drive Client %v", err)
 	}
 
-	rootDirId := "0B9D85zPc-_eQdzE3TTBxN3pBQTA"
-	if rootDirId != "root" {
-		fn, bool := setReadOnly(srv, 0)
-		if !bool {
-			f, err := srv.Files.Get(rootDirId).
-				Fields("id, name, mimeType, capabilities, permissions, parents").
-				Do()
-			if err != nil {
-				fmt.Println(err)
-			} else {
-				fn(f)
-			}
-		}
+
+	if len(os.Args) < 2 {
+		fmt.Println("TODO: USAGE")
+		return
 	}
-	//traverse(srv, "root", print, 0)
-	traverse(srv, rootDirId, setReadOnly, 0)
+
+	if os.Args[1] == "-l" {
+		maxRecursiveDepth, err := strconv.Atoi(os.Args[2])
+		if err != nil {
+			panic(err)
+		}
+		traverse(srv, "root", func(srv *drive.Service, depth int) (func(*drive.File), bool) {
+			if depth > maxRecursiveDepth {
+				return nil, true
+			}
+			prefix := strings.Repeat("-", depth)
+			return func(f *drive.File) {
+				fmt.Printf("%s %s (%s)\n", prefix, f.Name, f.Id)
+			}, false
+		})
+	} else if os.Args[1] == "-u" {
+		rootDirId := os.Args[2]
+		traverse(srv, rootDirId, setReadOnly)
+	}
 }
