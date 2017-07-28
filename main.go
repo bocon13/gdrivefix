@@ -10,28 +10,32 @@ import (
 	"strconv"
 )
 
+// Traverse the specified file/directory, starting by generating a function at depth 0 and applying it to the file
 func traverse(srv *drive.Service, directoryId string, gen func(*drive.Service, int) (func(*drive.File), bool)) {
 	fn, bool := gen(srv, 0)
-	if !bool {
-		f, err := srv.Files.Get(directoryId).
-			Fields("id, name, mimeType, capabilities, permissions, parents").
-			Do()
-		if err != nil {
-			fmt.Println(err)
-		} else {
-			fn(f)
-		}
+	if bool {
+		return
 	}
+	f, err := srv.Files.Get(directoryId).
+		Fields("id, name, mimeType, capabilities, permissions, parents").
+		Do()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fn(f)
 	_traverse(srv, directoryId, gen, 1)
 }
 
 func _traverse(srv *drive.Service, directoryId string, gen func(*drive.Service, int) (func(*drive.File), bool), depth int) {
-	nextPageToken := ""
+	// Generate the function for the appropriate depth to run on each node
 	fn, stop := gen(srv, depth)
 	if stop {
 		return
 	}
+	nextPageToken := ""
 	for {
+		// Find all children of a parent directory, results will be paged (hence the loop)
 		c := srv.Files.List().
 			Q(fmt.Sprintf("'%s' in parents", directoryId)).
 			Fields("nextPageToken", "files(id, name, mimeType, capabilities, permissions, parents)")
@@ -45,6 +49,7 @@ func _traverse(srv *drive.Service, directoryId string, gen func(*drive.Service, 
 
 		for _, i := range r.Files {
 			fn(i)
+			// Type == Google Drive Folder
 			if i.MimeType == "application/vnd.google-apps.folder" {
 				_traverse(srv, i.Id, gen, depth+1)
 			}
@@ -68,11 +73,14 @@ func setReadOnly(srv *drive.Service, depth int) (func(*drive.File), bool) {
 		//FIXME set the owner to onlab admin account
 		for _, p := range f.Permissions {
 			if p.Type == "user" && strings.HasSuffix(p.EmailAddress, "onlab.us") {
+				// Remove @onlab.us account permission
+				// Note: This will currently fail for the file owner
 				err := srv.Permissions.Delete(f.Id, p.Id).Do()
 				if err != nil {
 					fmt.Printf("Error removing permission for user %s (%s) on %s (%s): %s\n",
 						p.DisplayName, p.EmailAddress, f.Name, f.Id, err)
 				} else {
+					// Create read-only onf.org permission for the same user
 					newEmail := strings.Replace(p.EmailAddress, "onlab.us", "opennetworking.org", 1)
 					_, err = srv.Permissions.Create(f.Id, &drive.Permission{
 						EmailAddress: newEmail,
@@ -87,6 +95,8 @@ func setReadOnly(srv *drive.Service, depth int) (func(*drive.File), bool) {
 					}
 				}
 			} else if p.Role != "reader" {
+				// Update non-read-only permission to read-only
+				// Note: This will currently fail for the file owner
 				_, err := srv.Permissions.Update(f.Id, p.Id, &drive.Permission{
 					Role: "reader",
 				}).Do()
@@ -119,6 +129,7 @@ func main() {
 	}
 
 	if os.Args[1] == "-l" {
+		// Recursively list the directories starting at "My Drive" to the specified depth
 		maxRecursiveDepth, err := strconv.Atoi(os.Args[2])
 		if err != nil {
 			panic(err)
@@ -133,6 +144,7 @@ func main() {
 			}, false
 		})
 	} else if os.Args[1] == "-u" {
+		// Recursively fix permissions starting at the specified file/directory
 		rootDirId := os.Args[2]
 		traverse(srv, rootDirId, setReadOnly)
 	}
