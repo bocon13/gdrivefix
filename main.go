@@ -3,11 +3,12 @@ package main
 import (
 	"fmt"
 	"log"
-	"google.golang.org/api/drive/v3"
-	"github.com/bocon13/gdrivefix/app"
-	"strings"
 	"os"
 	"strconv"
+	"strings"
+
+	"github.com/bocon13/gdrivefix/app"
+	"google.golang.org/api/drive/v3"
 )
 
 // Traverse the specified file/directory, starting by generating a function at depth 0 and applying it to the file
@@ -62,51 +63,15 @@ func _traverse(srv *drive.Service, directoryId string, gen func(*drive.Service, 
 	}
 }
 
-
-
 func setReadOnly(srv *drive.Service, depth int) (func(*drive.File), bool) {
 	return func(f *drive.File) {
 		fmt.Printf("%s (%s)\n", f.Name, f.Id)
-		//FIXME set the owner to onlab admin account
-		for _, p := range f.Permissions {
-			if p.Type == "user" && strings.HasSuffix(p.EmailAddress, "onlab.us") {
-				// Remove @onlab.us account permission
-				// Note: This will currently fail for the file owner
-				err := srv.Permissions.Delete(f.Id, p.Id).Do()
-				if err != nil {
-					fmt.Printf("Error removing permission for user %s (%s) on %s (%s): %s\n",
-						p.DisplayName, p.EmailAddress, f.Name, f.Id, err)
-				} else {
-					// Create read-only onf.org permission for the same user
-					newEmail := strings.Replace(p.EmailAddress, "onlab.us", "opennetworking.org", 1)
-					_, err = srv.Permissions.Create(f.Id, &drive.Permission{
-						EmailAddress: newEmail,
-						Role:         "reader",
-						Type: "user",
-					}).Do()
-					if err != nil {
-						fmt.Printf("Error creating permission for user %s (%s) on %s (%s): %s\n",
-							p.DisplayName, newEmail, f.Name, f.Id, err)
-					} else {
-						fmt.Printf("Added %s (%s) as reader on %s", p.DisplayName, newEmail, f.Name)
-					}
-				}
-			} else if p.Role != "reader" {
-				// Update non-read-only permission to read-only
-				// Note: This will currently fail for the file owner
-				_, err := srv.Permissions.Update(f.Id, p.Id, &drive.Permission{
-					Role: "reader",
-				}).Do()
-				if err != nil {
-					fmt.Printf("Error updating permission for user %s (%s) on %s (%s): %s\n",
-						p.DisplayName, p.EmailAddress, f.Name, f.Id, err)
-				} else {
-					fmt.Printf("Set %s to reader on %s", p.DisplayName, f.Name)
-				}
-			} else {
-				fmt.Printf("Ignoring %s (%s) on %s\n", p.DisplayName, p.EmailAddress, f.Name)
-			}
-		}
+		srv.Permissions.Create(f.Id, &drive.Permission{
+			EmailAddress: "admin@onlab.us",
+			Role:         "owner",
+			Type:         "user",
+		}).TransferOwnership(true).Do()
+
 		fmt.Println("------------------------")
 	}, false
 }
@@ -118,7 +83,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Unable to retrieve drive Client %v", err)
 	}
-
 
 	if len(os.Args) < 2 {
 		fmt.Println("TODO: USAGE")

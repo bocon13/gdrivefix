@@ -18,10 +18,10 @@ import (
 )
 
 func Client() *http.Client {
-	return getClient(context.Background(), getConfig("client_secret.json"))
+	return getClient(context.Background(), GetConfig("client_secret.json"))
 }
 
-func getConfig(filename string) *oauth2.Config {
+func GetConfig(filename string) *oauth2.Config {
 	b, err := ioutil.ReadFile(filename)
 	if err != nil {
 		log.Fatalf("Unable to read client secret file: %v", err)
@@ -29,7 +29,7 @@ func getConfig(filename string) *oauth2.Config {
 
 	// If modifying these scopes, delete your previously saved credentials
 	// at ~/.credentials/drive-go-quickstart.json
-	config, err := google.ConfigFromJSON(b, drive.DriveScope, drive.DriveMetadataScope, drive.DriveFileScope)
+	config, err := google.ConfigFromJSON(b, drive.DriveScope)
 	if err != nil {
 		log.Fatalf("Unable to parse client secret file to config: %v", err)
 	}
